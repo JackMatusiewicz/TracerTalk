@@ -345,14 +345,15 @@ module internal Plane =
         (r : Ray)
         : CollisionRecord option
         =
-        let dDotN = (Vector.dot (UnitVector.toVector r.Direction) (UnitVector.toVector p.Normal))
+        let (UnitVector planeNormal) = p.Normal
+        let dDotN = (Vector.dot (UnitVector.toVector r.Direction) planeNormal)
         // If the ray is parallel to the plane, we definitely won't intersect.
         if dDotN = 0. then
             None
         else
             let t =
                 // (a - o) . n / d . n
-                (Vector.dot (p.Point - r.Position) (UnitVector.toVector p.Normal)) / dDotN
+                (Vector.dot (p.Point - r.Position) planeNormal) / dDotN
             CollisionRecord.tryMake minT t r p.Normal c
 ```
 
