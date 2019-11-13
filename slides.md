@@ -907,6 +907,130 @@ At the moment we don't check if there is anything between the light source and t
 
 # Updating the code
 
+```f#
+let private findClosestCollision
+    (shapes : SceneObject list)
+    (ray : Ray)
+    : CollisionRecord option
+    =
+    List.map (Shape.collides 0. ray) shapes
+    |> List.choose id
+    |> function
+        | [] -> None
+        | cs ->
+            List.sortBy (fun c -> c.T) cs
+            |> List.head
+            |> Some
+```
+
+```f#
+function | a -> ... => match x with | a ->...
+```
+---
+
+# Updating the code
+
+```f#
+let rec private getColourForRay
+    (shapes : SceneObject list)
+    (lights : Light list)
+    (r : Ray)
+    : Colour
+    =
+    findClosestCollision shapes r
+    |> Option.map
+        (fun collision ->
+            List.map (shadeAtCollision shapes collision) lights
+            |> List.fold (+) { R = 0.; G = 0.; B = 0.})
+    |> Option.defaultValue { R = 0.; G = 0.; B = 0. }
+```
+
+```f#
+Option.defaultValue : 'a -> 'a option -> 'a
+```
+---
+
+# Updating the code
+
+```f#
+let private shadeAtCollision
+    (sceneObjects : SceneObject list)
+    (cr : CollisionRecord)
+    (l : Light)
+    : Colour
+    =
+    let dir =
+        Light.direction l
+        |> UnitVector.toVector
+        |> Vector.scalarMultiply -1.
+        |> Vector.normalise
+    let lightRay = { Origin = cr.CollisionPoint; Direction = dir }
+
+    match findClosestCollision sceneObjects lightRay with
+    | None -> Lambertian.colour cr.Normal dir cr.Material
+    | Some _ ->  { R = 0.; G = 0.; B = 0. }
+    |> (+) (0.1 .* cr.Material.Colour) //Ambient colour
+```
+
+```f#
+(-) 5 3 => 5 - 3
+```
+
+---
+
+# So close
+
+![](./soClose.png)
+
+---
+
+# Shadows
+
+The issue is with my minT parameter.It's currently set to 0
+
+This means that, sometimes, the shadow ray will intersect with the wrong object.
+
+There's a simple solution..
+
+---
+
+# Fixing shadows
+
+```f#
+let private findClosestCollision
+    (shapes : SceneObject list)
+    (ray : Ray)
+    : CollisionRecord option
+    =
+    List.map (Shape.collides 0.001 ray) shapes
+    |> List.choose id
+    |> function
+        | [] -> None
+        | cs ->
+            List.sortBy (fun c -> c.T) cs
+            |> List.head
+            |> Some
+```
+
+---
+
+# Finally!
+
+![](./finally.png)
+
+---
+
+# Extras - Specular highlights
+
+Obviously not all materials are matte, some are shiny.
+
+In order to get that material we will need to implement the phong shader.
+
+As you can see, objects with specular highlights will be a mix of both matte and glossy.
+
+![](./specHigh.png)
+
+
 
 ---
 class: bold
