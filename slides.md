@@ -264,7 +264,7 @@ type Shape =
     | Sphere of Sphere
     | Plane of Plane
 
-type SceneObject = { Shape : Shape; Shader : Colour }
+type SceneObject = { Shape : Shape; Colour : Colour }
 ```
 
 ---
@@ -275,7 +275,7 @@ When we've found a collision, we need to keep track of some information that'll 
 
 ```f#
 [<Struct>]
-type CollisionRecord =
+type internal CollisionRecord =
     {
         /// The parameter to plug into the ray calculation
         T : float
@@ -284,10 +284,16 @@ type CollisionRecord =
         /// The normal of the object at the collision point
         Normal : UnitVector
         /// The colour of the object
-        Material : Colour
+        Colour : Colour
     }
+```
+---
 
+# Keeping track of collisions
+
+```f#
 module CollisionRecord =
+
     let private tryMake
         (minT : float) (t : float) (r : Ray)
         (n : UnitVector) (c : Colour)
@@ -375,17 +381,15 @@ module internal Sphere =
 
     let rayIntersects
         (minT : float)
-        (r : Ray)
+        ({Direction = UnitVector rayDir} as r : Ray)
         (colour : Colour)
         (s : Sphere)
         =
-
-        let bV = UnitVector.toVector r.Direction
         let aMinusC = r.Position - s.Center
 
         // Calculating the terms for the quadratic equation formula
-        let a = Vector.dot bV bV
-        let b = 2. * Vector.dot aMinusC bV
+        let a = Vector.dot rayDir rayDir
+        let b = 2. * Vector.dot aMinusC rayDir
         let c = Vector.dot aMinusC aMinusC - (s.Radius * s.Radius)
         let discriminant = b * b - 4. * a * c
         if discriminant < 0. then
@@ -400,6 +404,10 @@ module internal Sphere =
             |> Option.orElse (CollisionRecord.tryMake minT secondT r secondNormal colour)
 ```
 
+```f#
+let orElse (ifNone : 'a option) (thenUse : 'a option) : 'a
+```
+
 ---
 
 # Putting collisions together
@@ -411,10 +419,12 @@ module Shape =
     let collides (minT : float) (r : Ray) (s : SceneObject) =
         match s.Shape with
         | Sphere sp ->
-            Sphere.rayIntersects minT r s.Shader sp
+            Sphere.rayIntersects minT r s.Colour sp
         | Plane p ->
-            Plane.rayIntersects p minT s.Shader r
+            Plane.rayIntersects p minT s.Colour r
 ```
+
+---
 
 # View plane
 
@@ -468,15 +478,19 @@ module ViewPlane =
 
 1. We'll create a 2d array of pixels.
 1. For each pixel:
-    11. Create a light ray that is perpendicular to the pixel, fire it into the scene
-    11. Check if the pixel intersects with an object
-    11. If it does, colour the pixel with the shape's colour
-    11. If it does not intersect with an object, colour the pixel black
+    i. Create a light ray that is perpendicular to the pixel, fire it into the scene
+    i. Check if the pixel intersects with an object
+    i. If it does, colour the pixel with the shape's colour
+    i. If it does not intersect with an object, colour the pixel black
 
 ---
 
 # Constructing our scene
-Our first scene will just consist of some objects and a view plane
+
+Our scene brings all of the pieces together.
+Contains our scene objects and a view plane.
+
+---
 
 ```f#
 type Scene = { Objects : SceneObject list; ViewPlane : ViewPlane }
@@ -504,12 +518,51 @@ module Scene =
         ViewPlane.getRays scene.ViewPlane
         |> Array2D.map (getColourForRay scene.Objects)
         |> Image.save "foo"
+```
+---
+
+# Creating the objects
+
+```f#
+let shapes =
+    [
+        {
+            Shape =
+                Sphere { Center = { X = 0.; Y = 0.; Z = -1550. }; Radius = 300. }
+            Colour = { R = 0.; G = 1.; B = 0. }
+        }
+        {
+            Shape = Sphere { Center = { X = 0.; Y = 0.; Z = -900. }; Radius = 300. }
+            Colour = { R = 1.; G = 0.; B = 0. }
+        }
+        {
+            Shape =
+            Plane
+                {
+                    Point = { X = 0.; Y = -600.; Z = 0. }
+                    Normal = Vector.normalise { Vector.X = 0.; Y = 1.; Z = 0. }
+                }
+            Colour = { R = 0.5; G = 0.5; B = 0.25 }
+        }
+    ]
+```
 
 ---
 
+# Rendering the scene
+
+```f#
+let testScene () =
+    {
+        ViewPlane = { HorizontalResolution = 1920; VerticalResolution = 1080 }
+        Objects = shapes
+    }
+    |> Scene.toImage
+```
+
 # And the result is
 
-![](.redSphere.jpg)
+![](.redSphere.png)
 
 ---
 
@@ -522,8 +575,340 @@ How can we see the green sphere?
 
 # Movable camera
 
+Talk about how we construct a pinhole camera, include lots of slides!
+
 ---
 
+# Orthonormal basis
+
+```f#
+type internal OrthonormalBasis =
+    {
+        U : UnitVector
+        V : UnitVector
+        W : UnitVector
+    }
+
+module internal OrthonormalBasis =
+
+    let make
+        (UnitVector up : UnitVector)
+        ((UnitVector w) as wUnitVector : UnitVector) =
+        let u = Vector.cross up w
+        let v = Vector.cross w u
+        { U = Vector.normalise u; V = Vector.normalise v; W = wUnitVector }
+```
+
+---
+
+# Pinhole camera construction
+
+```f#
+type Pinhole =
+    internal {
+        ViewPlane : ViewPlane
+        CameraLocation : Point
+        CameraDistance : float
+        Up : UnitVector
+        Onb : OrthonormalBasis
+    }
+
+[<RequireQualifiedAccess>]
+module Pinhole =
+
+    let make (vp : ViewPlane) (location : Point) (distance :float) (up : UnitVector)
+        ((UnitVector direction) : UnitVector)
+        : Pinhole
+        =
+        {
+            ViewPlane = vp
+            CameraLocation = location
+            Up = up
+            CameraDistance = distance
+            Onb =
+                OrthonormalBasis.make
+                    up
+                    (-1. .* direction |> Vector.normalise)
+        }
+```
+
+---
+
+# Pinhole camera usage
+
+```f#
+// Boring maths implementation
+let private convertToWorldCoordinates x y z (onb : OrthonormalBasis) =
+        let u = x .* UnitVector.toVector onb.U
+        let v = y .* UnitVector.toVector onb.V
+        let w = z .* UnitVector.toVector onb.W
+        Vector.normalise (u + v - w)
+
+    let makeRayProvider (pinhole : Pinhole) : unit -> Ray[,] =
+        fun () ->
+            Array2D.init
+                pinhole.ViewPlane.VerticalResolution
+                pinhole.ViewPlane.HorizontalResolution
+                (fun r c ->
+                    let r = pinhole.ViewPlane.VerticalResolution - r - 1
+                    let x,y =
+                        ViewPlane.getXY r c pinhole.ViewPlane
+                    let dir = getRayDirection x y pinhole
+                    { Position = pinhole.CameraLocation; Direction = dir }
+                )
+```
+
+---
+
+# Updating the scene
+
+```f#
+type Scene =
+    {
+        Objects : SceneObject list
+        GetCameraRays : unit -> Ray[,]
+    }
+
+
+[<RequireQualifiedAccess>]
+module Scene =
+
+    let rec private getColourForRay
+        (shapes : SceneObject list)
+        (r : Ray)
+        : Colour
+        =
+        // no change
+        
+    let toImage (scene : Scene) : unit =
+        scene.GetCameraRays ()
+        |> Array2D.map (getColourForRay scene.Objects)
+        |> Image.save "foo"
+```
+
+---
+
+# Updating the scene object
+
+```f#
+let pinhole =
+    Pinhole.make
+        {
+            HorizontalResolution = 1920
+            VerticalResolution = 1080
+        }
+        { Point.X = -2000.; Y = 1000.; Z = -600. }
+        500.
+        ({ Vector.X = 0.; Y = 1.; Z = 0. } |> Vector.normalise)
+        ({ Vector.X = 2000.; Y = -1000.; Z = 600. } |> Vector.normalise)
+
+let testScene () =
+    {GetCameraRays = Pinhole.makeRayProvider pinhole; Objects = shapes;}
+    |> Scene.toImage
+```
+
+---
+
+# Here's what we get
+
+![](./twoBalls2D.png)
+
+---
+
+# Lighting
+In order to get more realistic shading, we need to introduce lights into the scene.
+
+The only light source this tracer will support is directional lighting
+
+---
+
+# Directional lighting
+Talk about why all lines are parallel
+
+---
+
+# Directional lighting
+
+```f#
+type DirectionalLight =
+    internal {
+        Direction : UnitVector
+        Colour : Colour
+        Luminosity : float
+    }
+
+type Light =
+    | Directional of DirectionalLight
+```
+
+---
+
+# Directional light functions
+
+```f#
+module DirectionalLight =
+
+    let internal direction (dl : DirectionalLight) : UnitVector =
+        dl.Direction
+
+    let internal luminosity (dl : DirectionalLight) : Colour =
+        Colour.scalarMultiply dl.Luminosity dl.Colour
+
+    let make (direction : UnitVector) (colour : Colour) (luminosity : float) : DirectionalLight =
+        { Direction = direction; Colour = colour; Luminosity = luminosity }
+```
+
+---
+
+# Using lights
+
+```f#
+module Light =
+
+    let direction (l : Light) : UnitVector =
+        match l with
+        | Directional d ->
+            DirectionalLight.direction d
+
+    let luminosity (l : Light) : Colour =
+        match l with
+        | Directional d ->
+            DirectionalLight.luminosity d
+```
+
+
+# Diffuse shading
+bla bla bla
+
+---
+
+# Diffuse shading
+```f#
+type Lambertian =
+    {
+        Colour : Colour
+        AlbedoCoefficient : float
+    }
+
+module Lambertian =
+
+    let shade (UnitVector normal) (UnitVector inDirection) (l : Lambertian) =
+        let angleBetweenVectors = Vector.dot normal inDirection
+        if angleBetweenVectors < 0. then
+            { R = 0.; G = 0.; B = 0. }
+        else
+        l.AlbedoCoefficient * angleBetweenVectors .* l.Colour
+```
+
+---
+
+# Updating the world
+
+```f#
+type Scene =
+    {
+        Objects : SceneObject list
+        Lights : Light list
+        GetCameraRays : unit -> Ray[,]
+    }
+```
+
+
+```f#
+type SceneObject =
+    {
+        Shape : Shape
+        Material : Lambertian
+    }
+```
+
+```f#
+[<Struct>]
+type CollisionRecord =
+    {
+        /// The parameter to plug into the ray calculation
+        T : float
+        /// The collision point on the surface of the object
+        CollisionPoint : Point
+        /// The normal of the object at the collision point
+        Normal : UnitVector
+        /// The colour of the object
+        Material : Lambertian
+    }
+```
+And so on...
+
+---
+
+# Updating the scene logic
+
+```f#
+let shadeAtCollision (cr : CollisionRecord) (l : Light) : Colour =
+        let dir =
+            Light.direction l
+            |> UnitVector.toVector
+            |> Vector.scalarMultiply -1.
+            |> Vector.normalise
+        let lightRay = { Ray.Position = cr.CollisionPoint; Direction = dir }
+        Lambertian.colour
+            cr.Normal
+            dir
+            cr.Material
+```
+
+---
+
+# Updating the scene logic
+
+```f#
+let rec private getColourForRay
+        (shapes : SceneObject list)
+        (lights : Light list)
+        (r : Ray)
+        : Colour
+        =
+        let collisionPoints =
+            List.map (Shape.collides 0. r) shapes
+            |> List.choose id
+        match collisionPoints with
+        | [] ->
+            { R = 0.; G = 0.; B = 0. }
+        | vs ->
+            let nearestCollision = List.sortBy (fun c -> c.T) vs |> List.head
+
+            List.map (shadeAtCollision nearestCollision) lights
+            |> List.fold (+) { R = 0.; G = 0.; B = 0.}
+        
+    let toImage (scene : Scene) : unit =
+        scene.GetCameraRays ()
+        |> Array2D.map (getColourForRay scene.Objects scene.Lights)
+        |> Image.save "foo"
+```
+
+```f#
+List.fold : ('state -> 'a -> 'state) -> 'state -> 'a list -> 'state
+```
+
+---
+
+# Almost there!
+
+![](./shadedBalls.png)
+
+---
+
+# Shadows
+
+Shadows are surprisingly easy to implement.
+
+At the moment we don't check if there is anything between the light source and the object.
+
+---
+
+# Updating the code
+
+
+---
 class: bold
 
 # Thanks for listening!
