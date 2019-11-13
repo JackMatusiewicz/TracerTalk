@@ -190,9 +190,7 @@
 <body>
   <script src="https://remarkjs.com/downloads/remark-latest.min.js">
   </script>
-  <script async
-   src="//mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML">
-  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-AMS_HTML&delayStartupUntil=configured" type="text/javascript"></script>
   <script>
     var slideshow = remark.create({
       sourceUrl: './slides.md',
@@ -210,6 +208,13 @@
         </div>
       `
     });
+    MathJax.Hub.Config({
+          tex2jax: {
+          skipTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+          }
+      });
+
+    MathJax.Hub.Configured();
   </script>
 </body>
 

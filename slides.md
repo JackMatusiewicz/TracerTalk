@@ -18,7 +18,7 @@ Writing a ray tracer in F#
 
 # What is a ray tracer?
 
-A way of producing images by generating light rays, firing them into an environment and simulating the reactions.
+* A way of producing images by generating light rays, firing them into an environment and simulating the reactions.
 
 ---
 
@@ -26,61 +26,23 @@ A way of producing images by generating light rays, firing them into an environm
 
 1. We'll create a 2d array of pixels.
 1. For each pixel:
-    11. Create a light ray that is perpendicular to the pixel, fire it into the scene
-    11. Check if the pixel intersects with an object
-    11. If it does, colour the pixel with the shape's colour
-    11. If it does not intersect with an object, colour the pixel black
+    1. Create a light ray that is perpendicular to the pixel, fire it into the scene
+    1. Check if the pixel intersects with an object
+    1. If it does, colour the pixel with the shape's colour
+    1. If it does not intersect with an object, colour the pixel black
 
 ---
 
-# Points
+# Vectors
 
-```f#
-[<Struct>]
-type Point =
-    {
-        X : float
-        Y : float
-        Z : float
-    } with
+* Directed line segments
+* 3D vectors are represented with (x,y,z) components.
+    * Don't confuse them with locations!
+    * A vector is defined by a direction and a length.
 
-    static member (-) (lhs : Point, rhs : Point) : Vector =
-        { X = lhs.X - rhs.X; Y = lhs.Y - rhs.Y; Z = lhs.Z - rhs.Z }
-
-    static member (+) (lhs : Vector, rhs : Point) : Point =
-        { X = lhs.X + rhs.X; Y = lhs.Y + rhs.Y; Z = lhs.Z + rhs.Z }
-
-    static member (+) (point : Point, vector : Vector) : Point = vector + point
-
-    override this.ToString () =
-        sprintf "%.3f, %.3f, %.3f" this.X this.Y this.Z
-```
-
+![](./sameVectors.png)
 ---
 
-# Static member operators
-This is the only way to overload operators in F#
-
-If you try to do it with modules....
-```f#
-module FirstModule =
-    let (./.) (a : int) (b : int) = a + b
-
-module SecondModule =
-    let (./.) (a : float) (b : float) = a + b
-
-module UsageModule =
-    open SecondModule
-    open FirstModule
-
-    let foo () = 5. ./. 6.
-```
-
-You get a...
-
-![](./ShadowingError.png)
-
----
 
 # Vectors
 
@@ -108,6 +70,30 @@ type Vector =
 [<Struct>]
 type UnitVector = private UnitVector of Vector
 ```
+
+---
+
+# Static member operators
+This is the only way to overload operators in F#
+
+If you try to do it with modules....
+```f#
+module FirstModule =
+    let (./.) (a : int) (b : int) = a + b
+
+module SecondModule =
+    let (./.) (a : float) (b : float) = a + b
+
+module UsageModule =
+    open SecondModule
+    open FirstModule
+
+    let foo () = 5. ./. 6.
+```
+
+You get a...
+
+![](./ShadowingError.png)
 
 ---
 
@@ -149,6 +135,22 @@ module Vector =
 
 ---
 
+# Tiny types with smart constructors
+
+```f#
+let normalise (x : Vector) : UnitVector =
+    let len = length x
+    scalarDivide len x
+    |> UnitVector
+```
+
+Having a type that has private internals with only a smart constructor to create it saves you on testing.
+
+All you have to do is test the constructor to ensure you create objects of the right type. After that, you can
+assume it's correct in the rest of your codebase.
+
+---
+
 # UnitVector functions
 
 ```f#
@@ -160,12 +162,36 @@ module UnitVector =
 
 ---
 
-# Tiny types with smart constructors
+# Points
 
-Have a type that is private with only a smart constructor to create it saves you on testing.
+* Points are locations in a space.
 
-All you have to do is test the constructor to ensure you create objects of the right type. After that, you can
-assume it's correct in the rest of your codebase.
+* For our purposes, points have 3 components (x,y,z)
+
+---
+
+# Points
+
+```f#
+[<Struct>]
+type Point =
+    {
+        X : float
+        Y : float
+        Z : float
+    } with
+
+    static member (-) (lhs : Point, rhs : Point) : Vector =
+        { X = lhs.X - rhs.X; Y = lhs.Y - rhs.Y; Z = lhs.Z - rhs.Z }
+
+    static member (+) (lhs : Vector, rhs : Point) : Point =
+        { X = lhs.X + rhs.X; Y = lhs.Y + rhs.Y; Z = lhs.Z + rhs.Z }
+
+    static member (+) (point : Point, vector : Vector) : Point = vector + point
+
+    override this.ToString () =
+        sprintf "%.3f, %.3f, %.3f" this.X this.Y this.Z
+```
 
 ---
 
@@ -246,8 +272,8 @@ module Colour =
 # Shapes
 This ray tracer will support two types of objects, spheres and planes.
 
-Planes can be uniquely defined by a point on the surface and the normal at that point.
-Spheres can be uniquely defined by their centre point and a radius.
+* Planes are an infinite sheet that can be uniquely defined by a point on the surface and the normal at that point
+* Spheres are a set of points that are a distance, r, away from a center point, c.
 
 ---
 
@@ -311,22 +337,22 @@ module CollisionRecord =
 
 ---
 
-# Plane collision
-    Plane collision is easy to calculate, we know that a point, p, is on our plane (Point, Normal) if:
-        (p - Point) . Normal = 0
-    This is because if p is on the plane then the vector made by (p - a) will be perpendicular to the normal and the
-    dot product will be 0.
+# Plane intersection
+Plane collision is easy to calculate, we know that a point, p, is on our plane (a, n) if:
+$$(p - a) . n = 0$$
+This is because if p is on the plane then the vector made by (p - a) will be perpendicular to the normal and the
+dot product will be 0.
 
-    So, we can substitute our ray equation (o + td for any t) to get:
-        (o + td - Point) . Normal
-    We can rearrange this to solve for t:
-    t = (Point - o) . Normal / (d . Normal)
-    
-    We can then substitute t into our ray equation to find the collision point
+So, we can substitute our ray equation (o + td for any t) to get:
+$$(o + td - a) . n$$
+We can rearrange this to solve for t:
+$$t = (a - o) . n / (d . n)$$
+
+We can then substitute t into our ray equation to find the collision point
 
 ---
 
-# Plane collision
+# Plane intersection
 
 ```f#
 module internal Plane =
@@ -355,22 +381,28 @@ module internal Plane =
 # Sphere intersection
 
 A point, p, lies on the surface of a sphere (c, r) if:
-    (p - c) . (p - c) - r^2 = 0
+    $$(p - c) . (p - c) - r^{2} = 0$$
 Again, we need to substitute the ray equation, o + td
-    (o + td - c) . (o + td - c) - r^2 = 0
+    $$(o + td - c) . (o + td - c) - r^{2} = 0$$
 
 Expanding and rearranging, we get:
-    t^2 (d.d) + t (2 (o - c) . d) + (o - c) . (o - c) - r^2 = 0
+    $$t^2 (d.d) + t (2 (o - c) . d) + (o - c) . (o - c) - r^{2} = 0$$
 
 This is a quadratic equation for t.
 
 So, we can find the roots for this equation!
-    -b +- sqrt (b^2 - 4ac) / 2a
+    $$x = \frac{{ - b \pm \sqrt {b^2 - 4ac} }}{2a}$$
 
-So, the discriminant, b^2 - 4ac, will tell us how many real roots we have:
-    < 0 means we have none,
-    = 0 means we have one
-    > 0 means we have two
+---
+# Sphere intersection
+
+So, the discriminant, $$b^{2} - 4ac$$ will tell us how many real roots we have:
+
+`< 0` means we have none,
+
+`= 0` means we have one
+
+`> 0` means we have two
 
 ---
 
@@ -434,9 +466,8 @@ For the time being, our view plane will be parallel to the xy-plane and perpendi
 The centre of our view plane will also go through the origin.
 
 We'll view our pixels as unit squares, to keep things simple
-(Take screen shot from RTFGU!)
 
-![](./viewplane.jpg)
+![](./viewplane.png)
 
 ---
 
@@ -478,19 +509,14 @@ module ViewPlane =
 
 1. We'll create a 2d array of pixels.
 1. For each pixel:
-    i. Create a light ray that is perpendicular to the pixel, fire it into the scene
-    i. Check if the pixel intersects with an object
-    i. If it does, colour the pixel with the shape's colour
-    i. If it does not intersect with an object, colour the pixel black
+    1. Create a light ray that is perpendicular to the pixel, fire it into the scene
+    1. Check if the pixel intersects with an object
+    1. If it does, colour the pixel with the shape's colour
+    1. If it does not intersect with an object, colour the pixel black
 
 ---
 
 # Constructing our scene
-
-Our scene brings all of the pieces together.
-Contains our scene objects and a view plane.
-
----
 
 ```f#
 type Scene = { Objects : SceneObject list; ViewPlane : ViewPlane }
@@ -560,9 +586,11 @@ let testScene () =
     |> Scene.toImage
 ```
 
+---
+
 # And the result is
 
-![](.redSphere.png)
+![](./redSphere.png)
 
 ---
 
@@ -575,11 +603,54 @@ How can we see the green sphere?
 
 # Movable camera
 
-Talk about how we construct a pinhole camera, include lots of slides!
+* In order to get a movable camera (with perspective) we'll move to using a virtual pinhole camera
+* Unlike a pinhole camera in real life. The virtual camera doesn't flip the image
+
+![](./pinhole.png)
+
+---
+
+# Pinhole camera
+
+Our pinhole camera will contain:
+
+* The camera position
+* A direction vector
+* An "up" vector
+* A view plane
+* A distance between the view plane and the camera
+
+![](./pinholeDesc.png)
+---
+
+# Pinhole camera
+
+
+We'll be using the direction vector and the "up" vector to construct a camera coordinate system that we can use to convert the view plane coordinates (which are in the camera coordinate system) to the world coordinate system.
 
 ---
 
 # Orthonormal basis
+
+* A set of unit vectors that are all perpendicular to one another.
+* They form a right-handed coordinate system where
+$$w = u \times v$$
+
+* Can be constructed from any two non-parallel vectors, a and b:
+
+$$w = \dfrac{a}{||a||}$$
+$$u = \dfrac{b \times w}{||b \times w||}$$
+$$ v = w \times u $$
+
+---
+
+# Orthonormal basis
+The orthonormal basis we construct will be in world coordinates. This means that we can take any vector (x,y,z) in the camera coordinate system and convert it into world coordinates:
+
+
+$$ xu + yv + zw $$
+
+---
 
 ```f#
 type internal OrthonormalBasis =
@@ -715,17 +786,15 @@ let testScene () =
 
 ---
 
-# Lighting
-In order to get more realistic shading, we need to introduce lights into the scene.
-
-The only light source this tracer will support is directional lighting
-
----
-
 # Directional lighting
-Talk about why all lines are parallel
+
+
+* Has no particular point in space
+* All rays that come for a directional light source are parallel.
+* The sun is (almost) an example of a directional light source because its rays on the earth's surface are (almost) parallel.
 
 ---
+
 
 # Directional lighting
 
@@ -776,9 +845,37 @@ module Light =
             DirectionalLight.luminosity d
 ```
 
+---
+
+# How the direction of light matters
+
+* Imagine,rather than a collision point, it was a tiny area on the surface, let's call it dA.
+* Let's also think about light hitting this area, there will be a finite number of photons being fired at this area of the surface (per unit of time)
+* When the direction of light is parallel to the surface normal, all of the photons hit this area.
+* As the angle between the surface normal and the direction of light increases, the area that the light hits begins to increase.
+* As we have a finite number of photons being is constant, and they are hitting a larger area, the resulting colour we see will be dimmer.
+
+* This can be summarised by Lambert's cosine law: $$\cos(\theta) = N . L$$
+
+---
+
+# How the direction of light matters
+
+![](./lightOverview.png)
+
+---
 
 # Diffuse shading
-bla bla bla
+
+* Light that hits a diffuse material is reflected in every direction equally.
+* We've seen that the angle between the light and the normal also has an effect on the output.
+* Shaders also include an *albedo* parameter. This is a measure of the proportion of light that is reflected from a surface.
+
+* Putting it all together (and ignoring some maths), you get the following equation:
+
+$$Colour = albedo \times (N. L) \times lightIntensity$$
+
+![](./diffuseReflection.png)
 
 ---
 
@@ -1030,11 +1127,57 @@ As you can see, objects with specular highlights will be a mix of both matte and
 
 ![](./specHigh.png)
 
+---
+
+# Specular surfaces
+
+* Unlike diffuse surfaces, that reflect light evenly in all directions. Specular reflections are clustered near the reflection vector
+
+![](./extraShaders.png)
+
+---
+
+# Materials
+
+In order to combine shaders to create more complex materials, an interface is required.
+
+---
+
+# Materials
+
+```f#
+type IMaterial =
+    abstract Colour
+        : normal:UnitVector
+        -> inDirection:UnitVector
+        -> outDirection:UnitVector
+        -> lightLuminosity:Colour
+        -> contactPoint:Point
+        -> reflectionTrace:(Ray -> Colour)
+        -> Colour
+
+type Matte = inherit IMaterial
+type Phong = inherit IMaterial
+type Mirror = inherit IMaterial
+
+[<RequireQualifiedAccess>]
+module Matte =
+
+    let make (lam : Lambertian) : Matte =
+        { new Matte with
+            member __.Colour (UnitVector normal) (UnitVector inD) _ luminosity _ _ =
+                let ambient = 0.1 .* lam.Colour
+                let nDotIn = Vector.dot normal inD
+                if nDotIn < 0. then ambient
+                else
+                    let col = Lambertian.colour lam
+                    nDotIn .* (luminosity * col + ambient)
+        }
+```
+
 
 
 ---
 class: bold
 
 # Thanks for listening!
-
-### Questions?
