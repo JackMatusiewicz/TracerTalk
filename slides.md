@@ -91,7 +91,7 @@ module UsageModule =
     let foo () = 5. ./. 6.
 ```
 
-You get a...
+You get...
 
 ![](./ShadowingError.png)
 
@@ -272,7 +272,7 @@ module Colour =
 # Shapes
 This ray tracer will support two types of objects, spheres and planes.
 
-* Planes are an infinite sheet that can be uniquely defined by a point on the surface and the normal at that point
+* Planes are infinite sheets that can be uniquely defined by a point on the surface and the normal at that point
 * Spheres are a set of points that are a distance, r, away from a center point, c.
 
 ---
@@ -493,7 +493,7 @@ module ViewPlane =
             vp.VerticalResolution
             vp.HorizontalResolution
             (fun row col ->
-                // Because we 0,0 in the bottom left corner of our 2D array.
+                // Because we want 0,0 in the bottom left corner of our 2D array.
                 let row = vp.VerticalResolution - row - 1
                 let x,y = getXY row col vp
                 {
@@ -538,7 +538,7 @@ module Scene =
             let v =
                 List.sortBy (fun hr -> hr.T) vs
                 |> List.head
-            v.Material
+            v.Colour
         
     let toImage (scene : Scene) : unit =
         ViewPlane.getRays scene.ViewPlane
@@ -565,7 +565,7 @@ let shapes =
             Shape =
             Plane
                 {
-                    Point = { X = 0.; Y = -600.; Z = 0. }
+                    Point = { X = 0.; Y = -300.; Z = 0. }
                     Normal = Vector.normalise { Vector.X = 0.; Y = 1.; Z = 0. }
                 }
             Colour = { R = 0.5; G = 0.5; B = 0.25 }
@@ -680,7 +680,6 @@ type Pinhole =
         ViewPlane : ViewPlane
         CameraLocation : Point
         CameraDistance : float
-        Up : UnitVector
         Onb : OrthonormalBasis
     }
 
@@ -694,7 +693,6 @@ module Pinhole =
         {
             ViewPlane = vp
             CameraLocation = location
-            Up = up
             CameraDistance = distance
             Onb =
                 OrthonormalBasis.make
@@ -724,7 +722,12 @@ let private convertToWorldCoordinates x y z (onb : OrthonormalBasis) =
                     let r = pinhole.ViewPlane.VerticalResolution - r - 1
                     let x,y =
                         ViewPlane.getXY r c pinhole.ViewPlane
-                    let dir = getRayDirection x y pinhole
+                    let dir =
+                        convertToWorldCoordinates
+                            x
+                            y
+                            pinhole.CameraDistance
+                            pinhole.Onb
                     { Position = pinhole.CameraLocation; Direction = dir }
                 )
 ```
@@ -873,7 +876,7 @@ module Light =
 
 * Putting it all together (and ignoring some maths), you get the following equation:
 
-$$Colour = albedo \times (N. L) \times lightIntensity$$
+$$Colour = albedo \times (N. L) \times lightIntensity \times objectColour$$
 
 ![](./diffuseReflection.png)
 
@@ -951,6 +954,7 @@ let shadeAtCollision (cr : CollisionRecord) (l : Light) : Colour =
             cr.Normal
             dir
             cr.Material
+        |> (*) Light.luminosity l
 ```
 
 ---
